@@ -7,7 +7,7 @@ A communication and collaborative Social Platform to allow students and Tutors t
 
 ## How to Run
 
-## Install Node Modules
+### Install Node Modules
 1. Run `npm install` and `npm run build` to install node_modules
 
 ### Running locally
