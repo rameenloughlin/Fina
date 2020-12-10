@@ -1,0 +1,175 @@
+// Helper methods
+currentUser() { auth.uid }
+isLoggedIn() { auth != null }
+isCurrentUser(uid) { isLoggedIn() && currentUser() == uid }
+isAdmin() { isLoggedIn() && prior(root).adminUsers[auth.uid] != null }
+isProjectOpen(projectId) { prior(root).projectPs[projectId].locked != true }
+isPanelKey(panelKey) { prior(root).panels[panelKey] != null }
+isProjectKey(projectKey) { prior(root).projectPs[projectKey] != null }
+isPostKey(postKey) { prior(root).posts[postKey] != null }
+
+// Types
+type PanelKey {
+  validate() { isPanelKey(this) }
+}
+
+type ProjectKey {
+  validate() { isProjectKey(this) }
+}
+
+type PostKey {
+  validate() { isPostKey(this) }
+}
+
+type CurrentUserId {
+  validate() { isLoggedIn() && this === currentUser() }
+}
+
+type Timestamp extends Number {
+  validate() { this <= now }
+}
+
+type UserMeta {
+  displayName: String | Null,
+  id: CurrentUserId | Null,
+  image: String | Null
+}
+
+type Settings {
+  theme: String
+}
+
+type User {
+  displayName: String,
+  lastLoginAt: Timestamp,
+  profileImageURL: String,
+  provider: String,
+  registeredAt: Number | Null,
+  email: String | Null,
+  settings: Settings | Null
+}
+
+type Post {
+  body: String | Null,
+  createdAt: Timestamp | Null,
+  projectId: String | Null,  // TODO: investigate using ProjectKey here
+  replyTo: PostKey | Null,
+  edited: Boolean | Null,
+  editedLast: Timestamp | Null,
+  editedBy: String | Null,
+  user: UserMeta | Null
+}
+
+type Project {
+  title: String,
+  panelId: PanelKey,
+  createdAt: Timestamp,
+  lastPostAt: Timestamp,
+  locked: Boolean | Null,
+  user: UserMeta
+}
+
+// Admin users
+path /adminUsers {
+  read() { isLoggedIn() }
+  write() { false }
+}
+
+// Panels
+path /panels {
+  read() { true }
+  /{panelId}/projectPs/{projectId} is Boolean {
+    create() { isLoggedIn() }
+    delete() { isAdmin() }
+  }
+
+  index() { [ "active" ] }
+}
+
+// Sections
+path /sections {
+  read() { true }
+  write() { false }
+  index() { [ "active" ] }
+}
+
+// Comments
+path /posts {
+  read() { true }
+  /{postId} is Post {
+    create() { isLoggedIn() && isProjectOpen(this.projectId) }
+    delete() { isAdmin() }
+
+    /body {
+      write() { isAdmin() || isCurrentUser(prior(this).parent().user.id) }
+    }
+
+    /edited {
+      write() { isAdmin() || isCurrentUser(prior(this).parent().user.id) }
+    }
+
+    /editedBy {
+      write() { isAdmin() || isCurrentUser(prior(this).parent().user.id) }
+    }
+
+    /editedLast {
+      write() { isAdmin() || isCurrentUser(prior(this).parent().user.id) }
+    }
+
+    /likes/{uid} is Boolean {
+      write() { isCurrentUser(uid) }
+    }
+  }
+}
+
+// Projects
+path /projectPs {
+  read() { true }
+  /{projectId} is Project {
+    create() { isLoggedIn() }
+    update() { isAdmin() }
+    delete() { isAdmin() }
+
+    // updating other fields is only allowed for admin but
+    // we need to allow updating lastPostAt for logged in users
+    /lastPostAt {
+      write() { isLoggedIn() }
+    }
+
+    /posts/{postId} is Boolean {
+      create() { isLoggedIn() && prior(root).posts[postId] == null }
+      delete() { isAdmin() }
+    }
+
+  }
+}
+
+// Users
+// TODO: more fine-grained permissions
+path /users/{uid} is User {
+  read() { true }
+  write() { isCurrentUser(uid) || isAdmin() }
+
+  /posts/{postId} is Boolean {
+    // TODO: these currently have no effect as write is already allowed
+    // for current user & admin
+    create() { isCurrentUser(uid) }
+    delete() { isAdmin() }
+  }
+
+  /projectsStarted/{projectId} is Boolean {
+    create() { isProjectKey(projectId) }
+  }
+
+  /likes/{postId} is Boolean {
+    // TODO: this currently has no effect as write is already allowed
+    // for current user & admin
+    write() { isCurrentUser(uid) && isPostKey(postId) }
+  }
+}
+
+// Settings
+path /settings {
+  read() { true }
+  write() { false }
+}
